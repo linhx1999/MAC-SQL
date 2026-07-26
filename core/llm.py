@@ -69,12 +69,6 @@ def api_func(prompt:str):
             messages=[{"role": "user", "content": prompt}],
             **optional_kwargs
         )
-    elif: openai.api_type == "open_ai":
-        openai.api_version = None
-        response = openai.ChatCompletion.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}]
-        )
     else:
         response = openai.ChatCompletion.create(
             engine=MODEL_NAME,
