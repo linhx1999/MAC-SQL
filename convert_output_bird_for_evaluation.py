@@ -52,17 +52,17 @@ def convert_predictions(
                 f"'db_id' for idx {idx} must be a non-empty string"
             )
 
-        final_sql = record.get("final_sql", "")
-        if final_sql is None:
-            final_sql = ""
-        if not isinstance(final_sql, str):
-            raise TypeError(f"'final_sql' for idx {idx} must be a string or null")
-        if BIRD_SEPARATOR in final_sql:
+        prediction_sql = record.get("pred", "")
+        if prediction_sql is None:
+            prediction_sql = ""
+        if not isinstance(prediction_sql, str):
+            raise TypeError(f"'pred' for idx {idx} must be a string or null")
+        if BIRD_SEPARATOR in prediction_sql:
             raise ValueError(
-                f"'final_sql' for idx {idx} contains the BIRD separator"
+                f"'pred' for idx {idx} contains the BIRD separator"
             )
 
-        predictions[idx] = f"{final_sql}{BIRD_SEPARATOR}{db_id}"
+        predictions[idx] = f"{prediction_sql}{BIRD_SEPARATOR}{db_id}"
 
     inferred_count = max(predictions, default=-1) + 1
     output_count = inferred_count if expected_count is None else expected_count
