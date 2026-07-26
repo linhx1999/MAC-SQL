@@ -48,7 +48,8 @@ class Selector(BaseAgent):
 
     def __init__(self, data_path: str, tables_json_path: str, model_name: str, dataset_name:str, lazy: bool = False, without_selector: bool = False):
         super().__init__()
-        self.data_path = data_path.strip('/').strip('\\')
+        # self.data_path = data_path.strip('/').strip('\\')
+        self.data_path = data_path.rstrip('/').strip('\\')
         self.tables_json_path = tables_json_path
         self.model_name = model_name
         self.dataset_name = dataset_name

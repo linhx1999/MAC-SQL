@@ -13,6 +13,10 @@ api_trace_json_path = None
 total_prompt_tokens = 0
 total_response_tokens = 0
 
+# LLM 推理参数（可通过 init_llm_params 配置）
+temperature = 0
+max_tokens = 16384
+
 
 def init_log_path(my_log_path):
     global total_prompt_tokens
@@ -29,13 +33,44 @@ def init_log_path(my_log_path):
     api_trace_json_path = os.path.join(dir_name, 'api_trace.json')
 
 
+def init_llm_params(my_temperature=None, my_max_tokens=None):
+    """设置 LLM 推理参数 temperature 与 max_tokens。传入 None 则保持原值。"""
+    global temperature
+    global max_tokens
+    if my_temperature is not None:
+        temperature = my_temperature
+    if my_max_tokens is not None:
+        max_tokens = my_max_tokens
+    print(f"LLM params -> temperature: {temperature}, max_tokens: {max_tokens}")
+
+
 def api_func(prompt:str):
     global MODEL_NAME
+    global temperature
+    global max_tokens
     print(f"\nUse OpenAI model: {MODEL_NAME}\n")
+    # 构造可选参数，max_tokens 为 None 时不传给 API
+    optional_kwargs = {'temperature': temperature}
+    if max_tokens is not None:
+        optional_kwargs['max_tokens'] = max_tokens
     if 'Llama' in MODEL_NAME:
         openai.api_version = None
         openai.api_type = "open_ai"
         openai.api_key = "EMPTY"
+        response = openai.ChatCompletion.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            **optional_kwargs
+        )
+    elif openai.api_type == "open_ai":
+        openai.api_version = None
+        response = openai.ChatCompletion.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            **optional_kwargs
+        )
+    elif: openai.api_type == "open_ai":
+        openai.api_version = None
         response = openai.ChatCompletion.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}]
@@ -44,7 +79,8 @@ def api_func(prompt:str):
         response = openai.ChatCompletion.create(
             engine=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
+            # temperature=0.1
+            **optional_kwargs
         )
     text = response['choices'][0]['message']['content'].strip()
     prompt_token = response['usage']['prompt_tokens']

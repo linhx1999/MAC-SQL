@@ -72,7 +72,9 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
     return user_message
 
 
-def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False):
+def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, temperature=0.1, max_tokens=None):
+    from core.llm import init_llm_params
+    init_llm_params(my_temperature=temperature, my_max_tokens=max_tokens)
     chat_manager = ChatManager(data_path=db_path,
                                tables_json_path=tables_json_path,
                                log_path=log_file,
@@ -104,15 +106,17 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
     new_batch = []
     exclude_db_json_cnt = 0 # for exclude some dbs in bird train set
     for k, item in enumerate(batch):
-        q_id = item['question_id']
-        if q_id not in unfinished_ids:
+        # q_id = item['question_id']
+        # if q_id not in unfinished_ids:
+        if k not in unfinished_ids:
             continue
         if dataset_mode == 'train':
             # skip excluded db_id
             if item['db_id'] in excluded_db_ids:
                 exclude_db_json_cnt += 1
                 continue
-        new_batch.append(item)
+        # new_batch.append(item)
+        new_batch.append((k, item))
     
     if exclude_db_json_cnt:
         print(f"excluded {exclude_db_json_cnt} excluded db json data")
@@ -123,8 +127,8 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
     # generate SQL one by one, and save result one by one
     with open(output_file, 'a+', encoding='utf-8') as fp:
         total_num = len(batch)
-        for cur_idx, item in tqdm(enumerate(batch), total=total_num):
-            idx = item['question_id']
+        for cur_idx, (idx, item) in tqdm(enumerate(batch), total=total_num):
+            # idx = item['question_id']
             db_id = item['db_id']
             print(f"\n\nprocessing: {cur_idx}/{total_num}\n\n", flush=True)
             if idx not in unfinished_ids: continue
@@ -203,6 +207,8 @@ if __name__ == "__main__":
     parser.add_argument('--start_pos', type=int, default=0, help='start position of a batch')
     parser.add_argument('--use_gold_schema', action='store_true', default=False)
     parser.add_argument('--without_selector', action='store_true', default=False)
+    parser.add_argument('--temperature', type=float, default=0.1, help='LLM sampling temperature')
+    parser.add_argument('--max_tokens', type=int, default=None, help='LLM max output tokens, e.g. 16384')
     args = parser.parse_args()
     # 打印args中的键值对
     for key, value in vars(args).items():
@@ -225,5 +231,7 @@ if __name__ == "__main__":
         log_file=args.log_file,
         start_pos=args.start_pos,
         use_gold_schema=args.use_gold_schema,
-        without_selector=args.without_selector
+        without_selector=args.without_selector,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens
     )
