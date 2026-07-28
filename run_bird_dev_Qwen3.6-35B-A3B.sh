@@ -9,8 +9,8 @@ export MODEL_NAME="Qwen3.6-35B-A3B"
 MAX_TOKENS=16384
 TEMPERATURE=0
 
-DATASET_ROOT="/root/autodl-tmp/workspace/kouan/datasets/bird/dev"
-OUTPUT_DIR="./outputs/bird_dev_Qwen3.6-35B-A3B"
+DATASET_ROOT="../datasets/bird/dev"
+OUTPUT_DIR="./outputs/bird_dev_qwen3.6-35b-a3b"
 
 mkdir -p "${OUTPUT_DIR}"
 
