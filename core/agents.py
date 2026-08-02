@@ -769,8 +769,18 @@ class Refiner(BaseAgent):
             error_info = self._execute_sql(old_sql, db_id)
         except Exception as e:
             is_timeout = True
+            error_info = {
+                "sql": str(old_sql),
+                "sqlite_error": str(e),
+                "exception_class": str(type(e).__name__)
+            }
         except FunctionTimedOut as fto:
             is_timeout = True
+            error_info = {
+                "sql": str(old_sql),
+                "sqlite_error": f"execution timed out: {fto}",
+                "exception_class": str(type(fto).__name__)
+            }
         
         is_need = self._is_need_refine(error_info)
         # is_need = False
