@@ -4,13 +4,16 @@ set -euo pipefail
 export OPENAI_API_TYPE="open_ai"
 export OPENAI_API_BASE="http://127.0.0.1:8001/v1"
 export OPENAI_API_KEY="EMPTY"
-export MODEL_NAME="Qwen2.5-Coder-7B-Instruct"
+# export MODEL_NAME="Qwen3.6-35B-A3B"
+# export MODEL_NAME="Qwen2.5-Coder-7B-Instruct"
+export MODEL_NAME="Ministral-3-14B-Reasoning-2512"
 
 MAX_TOKENS=16384
 TEMPERATURE=0
 
-DATASET_ROOT="../datasets/bird/dev"
-OUTPUT_DIR="./outputs/macsql_bird_dev_${MODEL_NAME}"
+DATASET_ROOT="../SAGE-SQL/datasets/bird/dev"
+DATASET="bird_dev"
+OUTPUT_DIR="./outputs/macsql_${DATASET}_${MODEL_NAME}_run_2"
 
 mkdir -p "${OUTPUT_DIR}"
 
