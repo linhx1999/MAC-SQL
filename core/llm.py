@@ -1,12 +1,14 @@
 import sys
 import json
 import time
+import threading
 from core.api_config import *
 
 MAX_TRY = 5
 
-# 用来传递外面的字典进来
-world_dict = {}
+_log_lock = threading.Lock()
+_trace_lock = threading.Lock()
+_token_lock = threading.Lock()
 
 log_path = None
 api_trace_json_path = None
@@ -91,58 +93,50 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
     global api_trace_json_path
     global total_prompt_tokens
     global total_response_tokens
-    global world_dict
 
     for i in range(5):
         try:
             if log_path is None:
-                # print(input_prompt)
                 sys_response, prompt_token, response_token = api_func(input_prompt)
                 print(f"\nsys_response: \n{sys_response}")
                 print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
             else:
-                # check log_path and api_trace_json_path is not None
-                if (log_path is None) or (api_trace_json_path is None):
-                    raise FileExistsError('log_path or api_trace_json_path is None, init_log_path first!')
-                with open(log_path, 'a+', encoding='utf8') as log_fp, open(api_trace_json_path, 'a+', encoding='utf8') as trace_json_fp:
-                    print('\n' + f'*'*20 +'\n', file=log_fp)
-                    print(input_prompt, file=log_fp)
-                    print('\n' + f'='*20 +'\n', file=log_fp)
-                    sys_response, prompt_token, response_token = api_func(input_prompt)
-                    print(sys_response, file=log_fp)
-                    print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n', file=log_fp)
-                    print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
+                if api_trace_json_path is None:
+                    raise FileExistsError('api_trace_json_path is None, init_log_path first!')
 
-                    if len(world_dict) > 0:
-                        world_dict = {}
-                    
-                    if len(kwargs) > 0:
-                        world_dict = {}
-                        for k, v in kwargs.items():
-                            world_dict[k] = v
-                    # prompt response to world_dict
-                    world_dict['response'] = '\n' + sys_response.strip() + '\n'
-                    world_dict['input_prompt'] = input_prompt.strip() + '\n'
+                # Keep the network request outside locks so requests can run concurrently.
+                sys_response, prompt_token, response_token = api_func(input_prompt)
 
-                    world_dict['prompt_token'] = prompt_token
-                    world_dict['response_token'] = response_token
-                    
-
+                with _token_lock:
                     total_prompt_tokens += prompt_token
                     total_response_tokens += response_token
+                    cur_total_prompt_tokens = total_prompt_tokens
+                    cur_total_response_tokens = total_response_tokens
 
-                    world_dict['cur_total_prompt_tokens'] = total_prompt_tokens
-                    world_dict['cur_total_response_tokens'] = total_response_tokens
+                trace_dict = dict(kwargs)
+                trace_dict.update({
+                    'response': '\n' + sys_response.strip() + '\n',
+                    'input_prompt': input_prompt.strip() + '\n',
+                    'prompt_token': prompt_token,
+                    'response_token': response_token,
+                    'cur_total_prompt_tokens': cur_total_prompt_tokens,
+                    'cur_total_response_tokens': cur_total_response_tokens
+                })
+                with _trace_lock:
+                    with open(api_trace_json_path, 'a+', encoding='utf8') as trace_json_fp:
+                        print(json.dumps(trace_dict, ensure_ascii=False), file=trace_json_fp, flush=True)
 
-                    # world_dict to json str
-                    world_json_str = json.dumps(world_dict, ensure_ascii=False)
-                    print(world_json_str, file=trace_json_fp)
+                with _log_lock:
+                    with open(log_path, 'a+', encoding='utf8') as log_fp:
+                        print('\n' + f'*'*20 +'\n', file=log_fp)
+                        print(input_prompt, file=log_fp)
+                        print('\n' + f'='*20 +'\n', file=log_fp)
+                        print(sys_response, file=log_fp)
+                        print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n', file=log_fp)
+                        print(f'\n total_prompt_tokens,total_response_tokens: {cur_total_prompt_tokens} {cur_total_response_tokens}\n', file=log_fp)
 
-                    world_dict = {}
-                    world_json_str = ''
-
-                    print(f'\n total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n', file=log_fp)
-                    print(f'\n total_prompt_tokens,total_response_tokens: {total_prompt_tokens} {total_response_tokens}\n')
+                print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
+                print(f'\n total_prompt_tokens,total_response_tokens: {cur_total_prompt_tokens} {cur_total_response_tokens}\n')
             return sys_response
         except Exception as ex:
             print(ex)

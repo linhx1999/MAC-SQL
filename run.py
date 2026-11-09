@@ -4,6 +4,8 @@ from core.chat_manager import ChatManager
 from core.utils import get_gold_columns
 from core.const import SYSTEM_NAME
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import queue
 import time
 import argparse
 import sys
@@ -72,16 +74,21 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
     return user_message
 
 
-def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, temperature=0.1, max_tokens=None):
+def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, temperature=0.1, max_tokens=None, num_workers=1):
+    if num_workers < 1:
+        raise ValueError("num_workers must be at least 1")
+
     from core.llm import init_llm_params
     init_llm_params(my_temperature=temperature, my_max_tokens=max_tokens)
-    chat_manager = ChatManager(data_path=db_path,
-                               tables_json_path=tables_json_path,
-                               log_path=log_file,
-                               dataset_name=dataset_name,
-                               model_name='gpt-4',
-                               lazy=True,
-                               without_selector=without_selector)
+    manager_pool = queue.Queue()
+    for _ in range(num_workers):
+        manager_pool.put(ChatManager(data_path=db_path,
+                                     tables_json_path=tables_json_path,
+                                     log_path=log_file,
+                                     dataset_name=dataset_name,
+                                     model_name='gpt-4',
+                                     lazy=True,
+                                     without_selector=without_selector))
     # load dataset
     batch = load_json_file(input_file)
     # resume from last checkpoint
@@ -124,34 +131,41 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
     batch = new_batch
 
 
-    # generate SQL one by one, and save result one by one
+    def process_item(cur_idx, total_num, idx, item):
+        print(f"\n\nprocessing: {cur_idx}/{total_num}, idx={idx}\n\n", flush=True)
+        if dataset_name == "spider":
+            user_message = init_spider_message(idx, item)
+        elif dataset_name == "bird":
+            user_message = init_bird_message(idx, item, db_path=db_path, use_gold_schema=use_gold_schema)
+
+        chat_manager = manager_pool.get()
+        try:
+            chat_manager.start(user_message)
+            for key in ('desc_str', 'fk_str', 'send_to'):
+                user_message.pop(key, None)
+            return user_message
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Exception on idx {idx}: {e}, sleep 20 seconds.", flush=True)
+            time.sleep(20)
+            return None
+        finally:
+            manager_pool.put(chat_manager)
+
+    # Workers run independently; the main thread is the only output writer.
     with open(output_file, 'a+', encoding='utf-8') as fp:
         total_num = len(batch)
-        for cur_idx, (idx, item) in tqdm(enumerate(batch), total=total_num):
-            # idx = item['question_id']
-            db_id = item['db_id']
-            print(f"\n\nprocessing: {cur_idx}/{total_num}\n\n", flush=True)
-            if idx not in unfinished_ids: continue
-            if dataset_name == "spider":
-                user_message = init_spider_message(idx, item)  # imitate user send a question to system
-            elif dataset_name == "bird":
-                user_message = init_bird_message(idx, item, db_path=db_path, use_gold_schema=use_gold_schema)  # imitate user send a question to system
-            try:
-                chat_manager.start(user_message)
-                try:
-                    del user_message['desc_str']
-                    del user_message['fk_str']
-                    del user_message['send_to']
-                except:
-                    pass
-                print(json.dumps(user_message, ensure_ascii=False), file=fp, flush=True)
-            except Exception as e:
-                # for debug
-                traceback.print_exc()
-                print(f"Exception: {e}, sleep 20 seconds.", flush=True)
-                time.sleep(20)
-                # raise Exception(str(e))
-            print(f"\n\ndeal {cur_idx+1}/{total_num} done!\n\n")
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            future_to_idx = {
+                executor.submit(process_item, cur_idx, total_num, idx, item): idx
+                for cur_idx, (idx, item) in enumerate(batch)
+            }
+            for cur_idx, future in enumerate(tqdm(as_completed(future_to_idx), total=total_num)):
+                idx = future_to_idx[future]
+                user_message = future.result()
+                if user_message is not None:
+                    print(json.dumps(user_message, ensure_ascii=False), file=fp, flush=True)
+                print(f"\n\ndeal {cur_idx+1}/{total_num} (idx={idx}) done!\n\n")
         print(f"Result dump into {output_file}", file=sys.stdout, flush=True)
 
     # export evaluation results
@@ -209,6 +223,7 @@ if __name__ == "__main__":
     parser.add_argument('--without_selector', action='store_true', default=False)
     parser.add_argument('--temperature', type=float, default=0.1, help='LLM sampling temperature')
     parser.add_argument('--max_tokens', type=int, default=None, help='LLM max output tokens, e.g. 16384')
+    parser.add_argument('--num_workers', type=int, default=1, help='number of parallel worker threads')
     args = parser.parse_args()
     # 打印args中的键值对
     for key, value in vars(args).items():
@@ -233,5 +248,6 @@ if __name__ == "__main__":
         use_gold_schema=args.use_gold_schema,
         without_selector=args.without_selector,
         temperature=args.temperature,
-        max_tokens=args.max_tokens
+        max_tokens=args.max_tokens,
+        num_workers=args.num_workers
     )
