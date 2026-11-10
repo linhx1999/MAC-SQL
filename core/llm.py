@@ -6,6 +6,11 @@ from core.api_config import *
 
 MAX_TRY = 5
 
+
+class ThinkingBudgetExhaustedError(RuntimeError):
+    """Raised when generation ends before producing final response content."""
+
+
 _log_lock = threading.Lock()
 _trace_lock = threading.Lock()
 _token_lock = threading.Lock()
@@ -78,7 +83,16 @@ def api_func(prompt:str):
             # temperature=0.1
             **optional_kwargs
         )
-    text = response['choices'][0]['message']['content'].strip()
+    choice = response['choices'][0]
+    content = choice['message']['content']
+    finish_reason = choice.get('finish_reason')
+    if content is None or not content.strip():
+        if finish_reason == 'length':
+            raise ThinkingBudgetExhaustedError(
+                f'Model exhausted max_tokens={max_tokens} before producing final response content.'
+            )
+        raise ValueError(f'LLM returned empty response content (finish_reason={finish_reason!r}).')
+    text = content.strip()
     prompt_token = response['usage']['prompt_tokens']
     response_token = response['usage']['completion_tokens']
     return text, prompt_token, response_token
@@ -138,6 +152,8 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
                 print(f'\n prompt_token,response_token: {prompt_token} {response_token}\n')
                 print(f'\n total_prompt_tokens,total_response_tokens: {cur_total_prompt_tokens} {cur_total_response_tokens}\n')
             return sys_response
+        except ThinkingBudgetExhaustedError:
+            raise
         except Exception as ex:
             print(ex)
             print(f'Request {MODEL_NAME} failed. try {i} times. Sleep 20 secs.')

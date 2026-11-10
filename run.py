@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from core.utils import *
 from core.chat_manager import ChatManager
+from core.llm import ThinkingBudgetExhaustedError
 from core.utils import get_gold_columns
 from core.const import SYSTEM_NAME
 from tqdm import tqdm
@@ -143,6 +144,19 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
             chat_manager.start(user_message)
             for key in ('desc_str', 'fk_str', 'send_to'):
                 user_message.pop(key, None)
+            return user_message
+        except ThinkingBudgetExhaustedError as e:
+            fallback_sql = 'SELECT NULL'
+            user_message.update({
+                'final_sql': fallback_sql,
+                'pred': fallback_sql,
+                'fixed': False,
+                'error_type': 'thinking_budget_exhausted',
+                'error': str(e)
+            })
+            for key in ('desc_str', 'fk_str', 'send_to'):
+                user_message.pop(key, None)
+            print(f"Thinking budget exhausted on idx {idx}; saved fallback SQL.", flush=True)
             return user_message
         except Exception as e:
             traceback.print_exc()
