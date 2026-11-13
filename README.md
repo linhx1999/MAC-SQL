@@ -140,3 +140,46 @@ If you find our work is helpful, please cite as:
 
 
 We welcome contributions and suggestions!
+
+## Generation cost logs
+
+`run_bird_dev.sh` sets an explicit `RUN_ID=cost_run_1` and writes to
+`outputs/macsql_<dataset>_<model>_<RUN_ID>/`. Set the intended model, endpoint and
+data paths before running. The existing `api_trace.json` remains available for
+successful logical calls. `run.py` additionally writes:
+
+- `llm_attempts.jsonl`: every SDK invocation, including failures and retries,
+  with stage, question/session/execution IDs, call ID, attempt, prompt hash,
+  finish reason, latency, and input/output/reasoning token usage.
+- `question_costs.jsonl`: every finished worker execution, including exceptions
+  that do not produce a prediction checkpoint. This preserves their cost while
+  keeping the original retry-on-resume behavior. Predictions additionally carry
+  `exec_time` and `execution_id`.
+- `run_sessions.jsonl`: append-only invocation configuration, model, input/code
+  hashes, status and wall time. `run_config.json` and `run_time.json` describe
+  the latest invocation only. A directory lock prevents concurrent runs in the
+  same output directory. This is an accounting lock, not a configuration identity
+  check: always use a new output directory when changing model/settings/code.
+
+The existing five-attempt loop and empty/truncated-response handling remain.
+A valid response without usage is now accepted instead of triggering a new call;
+missing usage stays null in request and legacy trace records. Legacy cumulative
+counters sum known tokens only. Request `success` means a response was received,
+not that SQL extraction/execution succeeded. Internal SDK retries are not
+individually observed. Do not add reasoning tokens to completion tokens blindly.
+
+Question elapsed time includes retry/failure sleeps and pipeline work, excludes
+executor/manager queueing, and is not GPU time. Invocation time includes setup and
+export. Keep request records from interrupted executions when resuming; they are
+real recorded costs even if the final prediction is later regenerated. Existing
+completed questions are skipped, so old runs cannot gain full cost coverage by
+resuming. Abrupt termination can leave a partial final JSONL line or omit a
+session's final record; inspect these before analysis. No endpoint URLs, keys or
+exception messages are added to the cost logs (exception classes are retained).
+
+Offline checks, using mocked requests:
+
+```bash
+python -m unittest discover -s tests -v
+bash -n run_bird_dev.sh
+```

@@ -12,7 +12,7 @@ import argparse
 import sys
 import os
 import json
-import traceback
+from core import cost_log
 
 
 def init_spider_message(idx: int, item: dict) -> dict:
@@ -75,6 +75,7 @@ def init_bird_message(idx: int, item: dict, db_path: str=None, use_gold_schema: 
     return user_message
 
 
+@cost_log.log_run
 def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, start_pos=0, log_file=None, dataset_mode='dev', use_gold_schema=False, without_selector=False, temperature=0.1, max_tokens=None, num_workers=1):
     if num_workers < 1:
         raise ValueError("num_workers must be at least 1")
@@ -140,12 +141,17 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
             user_message = init_bird_message(idx, item, db_path=db_path, use_gold_schema=use_gold_schema)
 
         chat_manager = manager_pool.get()
+        started = time.monotonic()
+        cost_record = cost_log.begin_question(idx, item["db_id"])
+        cost_record["status"] = "failed"
         try:
             chat_manager.start(user_message)
+            cost_record["status"] = "success"
             for key in ('desc_str', 'fk_str', 'send_to'):
                 user_message.pop(key, None)
             return user_message
         except ThinkingBudgetExhaustedError as e:
+            cost_record['exception_class'] = type(e).__name__
             fallback_sql = 'SELECT NULL'
             user_message.update({
                 'final_sql': fallback_sql,
@@ -159,12 +165,19 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
             print(f"Thinking budget exhausted on idx {idx}; saved fallback SQL.", flush=True)
             return user_message
         except Exception as e:
-            traceback.print_exc()
-            print(f"Exception on idx {idx}: {e}, sleep 20 seconds.", flush=True)
+            cost_record["exception_class"] = type(e).__name__
+            print(f"Exception on idx {idx}: {type(e).__name__}, sleep 20 seconds.", flush=True)
             time.sleep(20)
             return None
         finally:
-            manager_pool.put(chat_manager)
+            elapsed = time.monotonic() - started
+            user_message['exec_time'] = elapsed
+            user_message['execution_id'] = cost_record['execution_id']
+            cost_record['exec_time'] = elapsed
+            try:
+                cost_log.append('question_costs.jsonl', cost_record)
+            finally:
+                manager_pool.put(chat_manager)
 
     # Workers run independently; the main thread is the only output writer.
     with open(output_file, 'a+', encoding='utf-8') as fp:

@@ -3,6 +3,7 @@ import json
 import time
 import threading
 from core.api_config import *
+from core import cost_log
 
 MAX_TRY = 5
 
@@ -64,20 +65,20 @@ def api_func(prompt:str):
         openai.api_version = None
         openai.api_type = "open_ai"
         openai.api_key = "EMPTY"
-        response = openai.ChatCompletion.create(
+        response = cost_log.request(openai.ChatCompletion.create,
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             **optional_kwargs
         )
     elif openai.api_type == "open_ai":
         openai.api_version = None
-        response = openai.ChatCompletion.create(
+        response = cost_log.request(openai.ChatCompletion.create,
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             **optional_kwargs
         )
     else:
-        response = openai.ChatCompletion.create(
+        response = cost_log.request(openai.ChatCompletion.create,
             engine=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             # temperature=0.1
@@ -93,8 +94,8 @@ def api_func(prompt:str):
             )
         raise ValueError(f'LLM returned empty response content (finish_reason={finish_reason!r}).')
     text = content.strip()
-    prompt_token = response['usage']['prompt_tokens']
-    response_token = response['usage']['completion_tokens']
+    prompt_token = (response.get('usage') or {}).get('prompt_tokens')
+    response_token = (response.get('usage') or {}).get('completion_tokens')
     return text, prompt_token, response_token
 
 
@@ -108,6 +109,7 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
     global total_prompt_tokens
     global total_response_tokens
 
+    cost_log.begin_call(kwargs)
     for i in range(5):
         try:
             if log_path is None:
@@ -122,8 +124,8 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
                 sys_response, prompt_token, response_token = api_func(input_prompt)
 
                 with _token_lock:
-                    total_prompt_tokens += prompt_token
-                    total_response_tokens += response_token
+                    total_prompt_tokens += prompt_token or 0
+                    total_response_tokens += response_token or 0
                     cur_total_prompt_tokens = total_prompt_tokens
                     cur_total_response_tokens = total_response_tokens
 
@@ -155,7 +157,7 @@ def safe_call_llm(input_prompt, **kwargs) -> str:
         except ThinkingBudgetExhaustedError:
             raise
         except Exception as ex:
-            print(ex)
+            print(type(ex).__name__)
             print(f'Request {MODEL_NAME} failed. try {i} times. Sleep 20 secs.')
             time.sleep(20)
 

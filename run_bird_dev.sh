@@ -11,11 +11,13 @@ export MODEL_NAME="Qwen3.6-35B-A3B"
 MAX_TOKENS=16384
 TEMPERATURE=0
 NUM_THREADS="8"
+RUN_ID="cost_run_1"
 
 DATASET_ROOT="../SAGE-SQL/datasets/bird/dev"
 DATASET="bird_dev"
-OUTPUT_DIR="./outputs/macsql_${DATASET}_${MODEL_NAME}_run_3"
+OUTPUT_DIR="./outputs/macsql_${DATASET}_${MODEL_NAME}_${RUN_ID}"
 
+cd "$(dirname "${BASH_SOURCE[0]}")"
 mkdir -p "${OUTPUT_DIR}"
 
 python run.py \
