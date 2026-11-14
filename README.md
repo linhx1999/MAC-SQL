@@ -183,3 +183,15 @@ Offline checks, using mocked requests:
 python -m unittest discover -s tests -v
 bash -n run_bird_dev.sh
 ```
+
+### Spider dev launcher
+
+`bash run_spider_dev.sh` replaces the two model-specific Spider launchers.
+Edit the explicit model, endpoint, temperature (0), token budget (16384),
+workers (16), and run ID at the top. Data defaults to
+`../SAGE-SQL/datasets/spider`. Predictions, checkpoints, and existing cost
+logs go to `outputs/macsql_spider_dev_<model>_<run_id>/`.
+`pred_dev.sql` is exported in dataset order, with invalid SQL placeholders
+for missing or failed predictions. Use a new run ID for independent repeats.
+The launcher performs inference only; evaluate its `pred_dev.sql` with
+SAGE-SQL's `eval_spider_dev.sh`.

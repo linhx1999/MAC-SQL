@@ -215,12 +215,11 @@ def run_batch(dataset_name, input_file, output_file, db_path, tables_json_path, 
             print(f"BIRD format file dump into {evaluation_file_path}")
     elif dataset_name == "spider":
         evaluation_file_path = f"{out_dir}/pred_{dataset_mode}.sql"
-        spider_sql_lst = []
+        from core.spider_export import prediction_lines
         output_json_lst = load_jsonl_file(output_file)
-        for output_json in output_json_lst:
-            pred_sql = output_json['pred']
-            pred_sql = replace_multiple_spaces(pred_sql)
-            spider_sql_lst.append(pred_sql.strip() + '\n')
+        with open(input_file, encoding='utf-8') as stream:
+            question_count = len(json.load(stream))
+        spider_sql_lst = prediction_lines(output_json_lst, question_count)
         save_file(evaluation_file_path, spider_sql_lst)
         print(f"Spider format file dump into {evaluation_file_path}")
     else:
